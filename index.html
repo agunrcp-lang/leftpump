@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ปั๊มฝั่งซ้าย</title>
+<style>
+  :root { --bg:#0f1115; --card:#1a1d24; --text:#f2f2f2; --muted:#9aa0aa; --green:#1db954; --chip:#2a2f3a; --on:#1db954; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:14px 16px 6px; }
+  h1 { margin:0; font-size:22px; }
+  .sub { color:var(--muted); font-size:14px; margin-top:4px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; padding:10px 16px; }
+  .chip { border:none; border-radius:20px; padding:10px 14px; font-size:15px; background:var(--chip); color:var(--text); }
+  .chip.on { background:var(--on); color:#000; font-weight:600; }
+  #start { display:block; width:calc(100% - 32px); margin:8px 16px; padding:16px; font-size:18px; font-weight:700;
+           border:none; border-radius:12px; background:var(--green); color:#000; }
+  #start.stop { background:#e5484d; color:#fff; }
+  #status { padding:6px 16px; color:var(--muted); font-size:14px; min-height:20px; }
+  #road { padding:0 16px 6px; font-size:15px; }
+  ul { list-style:none; margin:0; padding:0 16px 40px; }
+  li { background:var(--card); border-radius:12px; padding:14px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .name { font-size:17px; font-weight:600; }
+  .type { color:var(--muted); font-size:13px; margin-top:2px; }
+  .dist { font-size:20px; font-weight:700; white-space:nowrap; }
+  a.go { display:inline-block; margin-top:8px; color:var(--green); font-size:14px; text-decoration:none; }
+  .empty { color:var(--muted); text-align:center; padding:30px 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⛽ ปั๊มฝั่งซ้าย</h1>
+  <div class="sub">โชว์เฉพาะที่อยู่ข้างหน้า ฝั่งซ้าย ติดถนนเส้นที่วิ่งอยู่ — แวะได้ไม่ต้องกลับรถ</div>
+</header>
+
+<div class="chips" id="chips"></div>
+<button id="start">▶ เริ่มใช้งาน</button>
+<div id="status">เลือกปั๊มที่อยากไป แล้วกดเริ่ม</div>
+<div id="road"></div>
+<ul id="list"></ul>
+
+<script>
+const CATS = [
+  { id:'ptt', label:'ปตท.', test:(t,s)=>isFuel(t) && /ptt|ปตท/.test(s) },
+  { id:'pt', label:'PT', test:(t,s)=>isFuel(t) && (/\bpt\b|พีที/.test(s)) && !/ptt|ปตท/.test(s) },
+  { id:'caltex', label:'คาลเท็กซ์', test:(t,s)=>isFuel(t) && /caltex|คาลเท็กซ์/.test(s) },
+  { id:'bangchak', label:'บางจาก', test:(t,s)=>isFuel(t) && /bangchak|บางจาก/.test(s) },
+  { id:'shell', label:'เชลล์', test:(t,s)=>isFuel(t) && /shell|เชลล์/.test(s) },
+  { id:'esso', label:'เอสโซ่', test:(t,s)=>isFuel(t) && /esso|เอสโซ่/.test(s) },
+  { id:'susco', label:'ซัสโก้', test:(t,s)=>isFuel(t) && /susco|ซัสโก้/.test(s) },
+  { id:'gas', label:'ปั๊มแก๊ส LPG/NGV', test:(t,s)=>isFuel(t) && (t['fuel:lpg']==='yes' || t['fuel:cng']==='yes' || /lpg|ngv|แก๊ส|ก๊าซ/.test(s)) },
+  { id:'otherfuel', label:'ปั๊มอื่นๆ', test:(t,s)=>isFuel(t) },
+  { id:'toilet', label:'🚻 ห้องน้ำ', test:(t)=>t.amenity==='toilets' },
+  { id:'shop', label:'🏪 ร้านสะดวกซื้อ', test:(t)=>t.shop==='convenience' },
+];
+function isFuel(t){ return t.amenity==='fuel'; }
+
+// ---------- เลือกประเภท (จำไว้ในเครื่อง) ----------
+let selected;
+try { selected = JSON.parse(localStorage.getItem('sel')) || ['ptt','pt','caltex','gas']; }
+catch(e){ selected = ['ptt','pt','caltex','gas']; }
+const chipsEl = document.getElementById('chips');
+function drawChips(){
+  chipsEl.innerHTML = '';
+  CATS.forEach(c=>{
+    const b = document.createElement('button');
+    b.className = 'chip' + (selected.includes(c.id) ? ' on' : '');
+    b.textContent = c.label;
+    b.onclick = ()=>{
+      selected = selected.includes(c.id) ? selected.filter(x=>x!==c.id) : [...selected, c.id];
+      try { localStorage.setItem('sel', JSON.stringify(selected)); } catch(e){}
+      drawChips(); render();
+    };
+    chipsEl.appendChild(b);
+  });
+}
+drawChips();
+
+// ---------- เรขาคณิต ----------
+function toXY(lat, lon, o){ // เมตร เทียบกับจุดอ้างอิง o
+  return { x:(lon-o.lon)*Math.cos(o.lat*Math.PI/180)*111320, y:(lat-o.lat)*110540 };
+}
+function distM(a,b){ const p=toXY(b.lat,b.lon,a); return Math.hypot(p.x,p.y); }
+function segDist(p,a,b){ // ระยะจุด p ถึงเส้น ab (หน่วย xy)
+  const dx=b.x-a.x, dy=b.y-a.y, L=dx*dx+dy*dy;
+  let t = L ? ((p.x-a.x)*dx+(p.y-a.y)*dy)/L : 0; t=Math.max(0,Math.min(1,t));
+  return { d:Math.hypot(p.x-(a.x+t*dx), p.y-(a.y+t*dy)), dx, dy };
+}
+function wayDist(pt, way, o){
+  const p = toXY(pt.lat, pt.lon, o); let best={d:Infinity};
+  for(let i=0;i<way.geometry.length-1;i++){
+    const a=toXY(way.geometry[i].lat,way.geometry[i].lon,o), b=toXY(way.geometry[i+1].lat,way.geometry[i+1].lon,o);
+    const r=segDist(p,a,b); if(r.d<best.d) best=r;
+  }
+  return best;
+}
+
+// ---------- ข้อมูลจาก OpenStreetMap ----------
+const SERVERS = ['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
+let pois=[], roads=[], fetchCenter=null, fetching=false;
+async function loadData(pos){
+  if(fetching) return; fetching=true;
+  setStatus('กำลังโหลดข้อมูลปั๊มรอบๆ...');
+  const r = 3000, c = `${pos.lat},${pos.lon}`;
+  const q = `[out:json][timeout:25];(
+    nwr(around:${r},${c})[amenity=fuel];
+    nwr(around:${r},${c})[amenity=toilets];
+    nwr(around:${r},${c})[shop=convenience];
+  )->.p; .p out center tags;
+  way(around:${r},${c})[highway~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"];
+  out geom tags;`;
+  for(const s of SERVERS){
+    try{
+      const res = await fetch(s, { method:'POST', body:'data='+encodeURIComponent(q) });
+      if(!res.ok) throw 0;
+      const j = await res.json();
+      pois=[]; roads=[];
+      j.elements.forEach(e=>{
+        if(e.type==='way' && e.geometry && e.tags && e.tags.highway) roads.push(e);
+        if(e.tags && (e.tags.amenity==='fuel'||e.tags.amenity==='toilets'||e.tags.shop==='convenience')){
+          const lat=e.lat??e.center?.lat, lon=e.lon??e.center?.lon;
+          if(lat!=null) pois.push({ id:e.type+e.id, lat, lon, tags:e.tags });
+        }
+      });
+      fetchCenter=pos; fetching=false; setStatus(''); return;
+    }catch(err){}
+  }
+  fetching=false; setStatus('โหลดข้อมูลไม่สำเร็จ จะลองใหม่อัตโนมัติ (เช็กเน็ต)');
+}
+
+// ---------- GPS และทิศทาง ----------
+let watchId=null, cur=null, prev=null, heading=null, spoken=new Set(), wakeLock=null;
+function bearing(a,b){ const p=toXY(b.lat,b.lon,a); return (Math.atan2(p.x,p.y)*180/Math.PI+360)%360; }
+function onPos(g){
+  const p = { lat:g.coords.latitude, lon:g.coords.longitude };
+  if(g.coords.heading!=null && !isNaN(g.coords.heading) && (g.coords.speed||0)>2) heading=g.coords.heading;
+  else if(prev && distM(prev,p)>15) heading=bearing(prev,p);
+  if(!prev || distM(prev,p)>15) prev=p;
+  cur=p;
+  if(!fetchCenter || distM(fetchCenter,p)>1500) loadData(p);
+  render();
+}
+
+// ---------- หาถนนที่วิ่งอยู่ ----------
+function currentRoad(){
+  if(!cur || !roads.length) return null;
+  let best=null, bestScore=Infinity;
+  roads.forEach(w=>{
+    const r = wayDist(cur, w, cur);
+    if(r.d>40) return;
+    let score=r.d;
+    if(heading!=null){ // ถนนต้องไปทิศเดียวกับรถ
+      const segB=(Math.atan2(r.dx,r.dy)*180/Math.PI+360)%360;
+      let diff=Math.abs(segB-heading)%180; diff=Math.min(diff,180-diff);
+      score += diff*0.8;
+    }
+    if(score<bestScore){ bestScore=score; best=w; }
+  });
+  if(!best) return null;
+  const key = best.tags.ref || best.tags.name;
+  const same = key ? roads.filter(w=>(w.tags.ref||w.tags.name)===key) : [best];
+  return { name: best.tags.name || best.tags.ref || 'ถนนไม่มีชื่อ', ways: same };
+}
+
+// ---------- แสดงผล ----------
+function catOf(t){
+  const s=((t.brand||'')+' '+(t.name||'')+' '+(t.operator||'')+' '+(t['name:en']||'')).toLowerCase();
+  const brandCats = CATS.filter(c=>c.id!=='otherfuel' && c.test(t,s)).map(c=>c.id);
+  if(isFuel(t) && !brandCats.some(id=>['ptt','pt','caltex','bangchak','shell','esso','susco'].includes(id))) brandCats.push('otherfuel');
+  return brandCats;
+}
+function render(){
+  const list=document.getElementById('list'), roadEl=document.getElementById('road');
+  if(!cur){ list.innerHTML=''; return; }
+  if(heading==null){ roadEl.textContent=''; list.innerHTML='<div class="empty">ขยับรถไปสักหน่อย เพื่อให้รู้ว่ากำลังวิ่งไปทางไหน</div>'; return; }
+  const road=currentRoad();
+  roadEl.textContent = road ? '🛣️ กำลังวิ่งบน: '+road.name : '🛣️ ยังหาถนนที่วิ่งอยู่ไม่เจอ';
+  const h={ x:Math.sin(heading*Math.PI/180), y:Math.cos(heading*Math.PI/180) };
+  const items=[];
+  pois.forEach(p=>{
+    const cats=catOf(p.tags);
+    if(!cats.some(c=>selected.includes(c))) return;
+    const d=toXY(p.lat,p.lon,cur);
+    const ahead=d.x*h.x+d.y*h.y, left=h.x*d.y-h.y*d.x;
+    if(ahead<30 || left<=0) return;               // ต้องอยู่ข้างหน้าและฝั่งซ้าย
+    if(road){
+      const near=Math.min(...road.ways.map(w=>wayDist(p,w,cur).d));
+      if(near>60) return;                          // ต้องติดถนนเส้นเดียวกัน
+    }
+    items.push({ p, cats, dist:Math.hypot(d.x,d.y) });
+  });
+  items.sort((a,b)=>a.dist-b.dist);
+  if(!items.length){ list.innerHTML='<div class="empty">ข้างหน้าฝั่งซ้ายยังไม่เจอที่ที่เลือกไว้ใน 3 กม.</div>'; return; }
+  list.innerHTML = items.slice(0,15).map(it=>{
+    const t=it.p.tags, name=t.name||t.brand||labelOf(it.cats[0]);
+    const km = it.dist<1000 ? Math.round(it.dist/10)*10+' ม.' : (it.dist/1000).toFixed(1)+' กม.';
+    const url=`https://www.google.com/maps/dir/?api=1&destination=${it.p.lat},${it.p.lon}&travelmode=driving`;
+    return `<li><div><div class="name">${esc(name)}</div><div class="type">${it.cats.map(labelOf).join(' · ')}</div>
+      <a class="go" href="${url}" target="_blank">นำทางด้วย Google Maps →</a></div><div class="dist">${km}</div></li>`;
+  }).join('');
+  const first=items[0];
+  if(first.dist<1000 && !spoken.has(first.p.id)){
+    spoken.add(first.p.id);
+    const n=first.p.tags.name||first.p.tags.brand||labelOf(first.cats[0]);
+    speak(`อีก ${Math.round(first.dist/50)*50} เมตร มี ${n} ฝั่งซ้าย`);
+  }
+}
+function labelOf(id){ return (CATS.find(c=>c.id===id)||{label:''}).label; }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function setStatus(s){ document.getElementById('status').textContent=s; }
+function speak(text){
+  try{ const u=new SpeechSynthesisUtterance(text); u.lang='th-TH'; speechSynthesis.speak(u); }catch(e){}
+}
+
+// ---------- ปุ่มเริ่ม/หยุด ----------
+const btn=document.getElementById('start');
+btn.onclick=async ()=>{
+  if(watchId!==null){
+    navigator.geolocation.clearWatch(watchId); watchId=null;
+    btn.textContent='▶ เริ่มใช้งาน'; btn.classList.remove('stop'); setStatus('หยุดแล้ว');
+    try{ wakeLock && wakeLock.release(); }catch(e){}
+    return;
+  }
+  if(!navigator.geolocation){ setStatus('เครื่องนี้ใช้ GPS ไม่ได้'); return; }
+  speak('เริ่มใช้งาน');                              // ปลดล็อกเสียงในมือถือ
+  try{ wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+  watchId=navigator.geolocation.watchPosition(onPos, e=>setStatus('เปิด GPS ไม่ได้: กรุณาอนุญาตตำแหน่ง'),
+    { enableHighAccuracy:true, maximumAge:2000, timeout:15000 });
+  btn.textContent='■ หยุด'; btn.classList.add('stop'); setStatus('กำลังหาตำแหน่ง...');
+};
+</script>
+</body>
+</html>
