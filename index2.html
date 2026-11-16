@@ -23,9 +23,9 @@
   #road { padding:0 16px 6px; font-size:15px; }
   ul { list-style:none; margin:0; padding:0 16px 40px; }
   li { background:var(--card); border-radius:12px; padding:14px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
-  .name { font-size:17px; font-weight:600; }
+  .name { font-size:21px; font-weight:600; }
   .type { color:var(--muted); font-size:13px; margin-top:2px; }
-  .dist { font-size:20px; font-weight:700; white-space:nowrap; }
+  .dist { font-size:28px; font-weight:700; white-space:nowrap; }
   a.go { display:inline-block; margin-top:8px; color:var(--green); font-size:14px; text-decoration:none; }
   .empty { color:var(--muted); text-align:center; padding:30px 16px; }
   #mapwrap { position:relative; margin:0 16px 10px; }
@@ -34,16 +34,28 @@
               padding:10px 14px; font-size:14px; font-weight:600; background:#fff; color:#000; box-shadow:0 2px 6px #0006; }
   .num { background:var(--green); color:#000; font-weight:700; border-radius:50%; width:28px; height:28px;
          display:flex; align-items:center; justify-content:center; border:2px solid #fff; box-shadow:0 1px 4px #0008; }
-  .pin { width:140px; display:flex; flex-direction:column; align-items:center; }
-  .ptag { color:#fff; font-size:14px; font-weight:700; padding:5px 10px; border-radius:16px; border:2px solid #fff;
+  .pin { width:220px; display:flex; flex-direction:column; align-items:center; }
+  .ptag { color:#fff; font-size:19px; font-weight:800; padding:7px 14px; border-radius:20px; border:3px solid #fff;
           white-space:nowrap; box-shadow:0 2px 5px #0005; display:flex; align-items:center; gap:6px; }
-  .ptag b { background:#fff; color:#000; border-radius:50%; width:20px; height:20px; display:inline-flex;
-            align-items:center; justify-content:center; font-size:12px; }
-  .ptip { width:0; height:0; border:7px solid transparent; border-bottom:0; margin-top:-1px; }
+  .ptag b { background:#fff; color:#000; border-radius:50%; width:26px; height:26px; display:inline-flex;
+            align-items:center; justify-content:center; font-size:16px; }
+  .ptip { width:0; height:0; border:10px solid transparent; border-bottom:0; margin-top:-1px; }
   .pin.dim { opacity:.55; }
-  .pin.dim .ptag { font-size:11px; padding:3px 7px; box-shadow:none; }
-  .badge { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%;
-           background:var(--green); color:#000; font-size:13px; font-weight:700; margin-right:6px; }
+  .pin.dim .ptag { font-size:13px; padding:3px 8px; box-shadow:none; border-width:2px; }
+  .badge { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:50%;
+           background:var(--green); color:#000; font-size:16px; font-weight:700; margin-right:6px; }
+  #next { display:none; margin:0 16px 10px; padding:14px 16px; border-radius:14px; background:#fff; color:#000; }
+  #next.show { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+  #next .nlabel { font-size:15px; color:#555; }
+  #next .nname { font-size:26px; font-weight:800; line-height:1.2; }
+  #next .ndist { font-size:44px; font-weight:900; white-space:nowrap; }
+  body.running header, body.running .chips { display:none; }
+  body.running #start { padding:10px; font-size:16px; }
+  body.running #map { height:62vh; }
+  #road { font-size:18px; font-weight:600; }
+  .modes { display:flex; gap:8px; margin:8px 16px 0; }
+  .mode { flex:1; border:none; border-radius:12px; padding:14px 8px; font-size:18px; font-weight:800; background:var(--chip); color:var(--text); }
+  .mode.on { background:#2f80ff; color:#fff; }
 </style>
 </head>
 <body>
@@ -53,9 +65,11 @@
 </header>
 
 <div class="chips" id="chips"></div>
+<div class="modes"><button class="mode" data-m="left">⬅️ ทางที่จะไป</button><button class="mode" data-m="near">📍 ใกล้สุด</button></div>
 <button id="start">▶ เริ่มใช้งาน</button>
 <div id="status">เลือกปั๊มที่อยากไป แล้วกดเริ่ม</div>
 <div id="road"></div>
+<div id="next"><div><div class="nlabel" id="nlabel">ปั๊มถัดไป ฝั่งซ้าย</div><div class="nname" id="nname"></div></div><div class="ndist" id="ndist"></div></div>
 <div id="mapwrap"><div id="map"></div><button id="recenter">📍 กลับมาที่ฉัน</button></div>
 <ul id="list"></ul>
 
@@ -95,6 +109,16 @@ function drawChips(){
   });
 }
 drawChips();
+
+// ---------- โหมด: ทางที่จะไป / ใกล้สุด ----------
+let mode = 'left';
+try { mode = localStorage.getItem('mode') || 'left'; } catch(e){}
+function drawModes(){
+  document.querySelectorAll('.mode').forEach(b=>{
+    b.classList.toggle('on', b.dataset.m===mode);
+    b.onclick = ()=>{ mode=b.dataset.m; try{ localStorage.setItem('mode',mode); }catch(e){} spoken=new Set(); drawModes(); render(); };
+  });
+}
 
 // ---------- เรขาคณิต ----------
 function toXY(lat, lon, o){ // เมตร เทียบกับจุดอ้างอิง o
@@ -152,6 +176,7 @@ async function loadData(pos){
 
 // ---------- GPS และทิศทาง ----------
 let watchId=null, cur=null, prev=null, heading=null, spoken=new Set(), wakeLock=null;
+drawModes();
 function bearing(a,b){ const p=toXY(b.lat,b.lon,a); return (Math.atan2(p.x,p.y)*180/Math.PI+360)%360; }
 function onPos(g){
   const p = { lat:g.coords.latitude, lon:g.coords.longitude };
@@ -194,21 +219,21 @@ function pinIcon(cats, num, dim){
   const color = dim ? '#8a8f98' : (STYLE[main] || '#5f6670');
   const label = SHORT[main] + (cats.includes('gas') && main!=='gas' ? ' + แก๊ส' : '');
   const html = `<div class="pin${dim?' dim':''}"><div class="ptag" style="background:${color}">${num?`<b>${num}</b>`:''}${esc(label)}</div><div class="ptip" style="border-top-color:${color}"></div></div>`;
-  return L.divIcon({ html, className:'', iconSize:[140,40], iconAnchor:[70,40] });
+  return L.divIcon({ html, className:'', iconSize:[220,56], iconAnchor:[110,56] });
 }
 const roadLayer = L.layerGroup().addTo(map), poiLayer = L.layerGroup().addTo(map);
 let meMarker = null, follow = true, firstFix = true;
 map.on('dragstart', ()=>{ follow = false; });
-document.getElementById('recenter').onclick = ()=>{ follow = true; if(cur) map.setView([cur.lat, cur.lon], 16); };
+document.getElementById('recenter').onclick = ()=>{ follow = true; if(cur) map.setView([cur.lat, cur.lon], 17); };
 function drawMe(){
   const rot = heading==null ? 0 : heading;
   const svg = heading==null
-    ? `<svg width="24" height="24"><circle cx="12" cy="12" r="9" fill="#2f80ff" stroke="#fff" stroke-width="3"/></svg>`
-    : `<svg width="34" height="34" viewBox="0 0 34 34" style="transform:rotate(${rot}deg)"><path d="M17 2 L29 30 L17 23 L5 30 Z" fill="#2f80ff" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/></svg>`;
-  const icon = L.divIcon({ html:svg, className:'', iconSize:heading==null?[24,24]:[34,34], iconAnchor:heading==null?[12,12]:[17,17] });
+    ? `<svg width="34" height="34"><circle cx="17" cy="17" r="13" fill="#2f80ff" stroke="#fff" stroke-width="4"/></svg>`
+    : `<svg width="52" height="52" viewBox="0 0 34 34" style="transform:rotate(${rot}deg)"><path d="M17 2 L29 30 L17 23 L5 30 Z" fill="#2f80ff" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/></svg>`;
+  const icon = L.divIcon({ html:svg, className:'', iconSize:heading==null?[34,34]:[52,52], iconAnchor:heading==null?[17,17]:[26,26] });
   if(!meMarker) meMarker = L.marker([cur.lat, cur.lon], { icon, zIndexOffset:1000 }).addTo(map);
   else { meMarker.setLatLng([cur.lat, cur.lon]); meMarker.setIcon(icon); }
-  if(firstFix){ map.setView([cur.lat, cur.lon], 16); firstFix = false; }
+  if(firstFix){ map.setView([cur.lat, cur.lon], 17); firstFix = false; }
   else if(follow) map.panTo([cur.lat, cur.lon], { animate:true });
 }
 
@@ -222,20 +247,21 @@ function catOf(t){
 function render(){
   const list=document.getElementById('list'), roadEl=document.getElementById('road');
   if(!cur){ list.innerHTML=''; return; }
-  drawMe(); poiLayer.clearLayers(); roadLayer.clearLayers();
-  if(heading==null){ roadEl.textContent=''; list.innerHTML='<div class="empty">ขยับรถไปสักหน่อย เพื่อให้รู้ว่ากำลังวิ่งไปทางไหน</div>'; return; }
+  drawMe(); poiLayer.clearLayers(); roadLayer.clearLayers(); document.getElementById('next').classList.remove('show');
+  if(heading==null && mode==='left'){ roadEl.textContent=''; list.innerHTML='<div class="empty">ขยับรถไปสักหน่อย เพื่อให้รู้ว่ากำลังวิ่งไปทางไหน</div>'; return; }
   const road=currentRoad();
   roadEl.textContent = road ? '🛣️ กำลังวิ่งบน: '+road.name : '🛣️ ยังหาถนนที่วิ่งอยู่ไม่เจอ';
   if(road) road.ways.forEach(w=>L.polyline(w.geometry.map(g=>[g.lat,g.lon]), { color:'#ffd400', weight:7, opacity:0.55 }).addTo(roadLayer));
-  const h={ x:Math.sin(heading*Math.PI/180), y:Math.cos(heading*Math.PI/180) };
+  const hd = heading==null ? 0 : heading;
+  const h={ x:Math.sin(hd*Math.PI/180), y:Math.cos(hd*Math.PI/180) };
   const items=[], others=[];
   pois.forEach(p=>{
     const cats=catOf(p.tags);
     if(!cats.some(c=>selected.includes(c))) return;
     const d=toXY(p.lat,p.lon,cur);
     const ahead=d.x*h.x+d.y*h.y, left=h.x*d.y-h.y*d.x;
-    let ok = ahead>=30 && left>0;                  // ต้องอยู่ข้างหน้าและฝั่งซ้าย
-    if(ok && road){
+    let ok = mode==='near' ? true : (ahead>=30 && left>0);                  // ต้องอยู่ข้างหน้าและฝั่งซ้าย
+    if(ok && road && mode==='left'){
       const near=Math.min(...road.ways.map(w=>wayDist(p,w,cur).d));
       if(near>60) ok=false;                        // ต้องติดถนนเส้นเดียวกัน
     }
@@ -244,22 +270,27 @@ function render(){
   items.sort((a,b)=>a.dist-b.dist);
   others.forEach(o=>L.marker([o.p.lat,o.p.lon], { icon:pinIcon(o.cats,null,true), zIndexOffset:-100 })
     .bindPopup(`<b>${esc(o.p.tags.name||o.p.tags.brand||labelOf(o.cats[0]))}</b><br>ไม่อยู่ฝั่งซ้ายข้างหน้า (ต้องกลับรถ)`).addTo(poiLayer));
-  if(!items.length){ list.innerHTML='<div class="empty">ข้างหน้าฝั่งซ้ายยังไม่เจอที่ที่เลือกไว้ใน 3 กม.</div>'; return; }
+  document.getElementById('nlabel').textContent = mode==='near' ? 'ปั๊มใกล้สุด' : 'ปั๊มถัดไป ฝั่งซ้าย';
+  if(!items.length){ list.innerHTML= mode==='near' ? '<div class="empty">ยังไม่เจอที่ที่เลือกไว้ใน 3 กม.</div>' : '<div class="empty">ข้างหน้าฝั่งซ้ายยังไม่เจอที่ที่เลือกไว้ใน 3 กม.</div>'; return; }
   list.innerHTML = items.slice(0,15).map((it,i)=>{
     const t=it.p.tags, name=t.name||t.brand||labelOf(it.cats[0]);
     const km = it.dist<1000 ? Math.round(it.dist/10)*10+' ม.' : (it.dist/1000).toFixed(1)+' กม.';
     const url=`https://www.google.com/maps/dir/?api=1&destination=${it.p.lat},${it.p.lon}&travelmode=driving`;
     L.marker([it.p.lat, it.p.lon], { icon:pinIcon(it.cats, i+1, false), zIndexOffset:500 })
-      .bindPopup(`<b>${esc(name)}</b><br>อีก ${km} · ฝั่งซ้าย<br><a href="${url}" target="_blank">นำทาง</a>`).addTo(poiLayer);
+      .bindPopup(`<b>${esc(name)}</b><br>อีก ${km}${mode==='left'?' · ฝั่งซ้าย':''}<br><a href="${url}" target="_blank">นำทาง</a>`).addTo(poiLayer);
     const bc = STYLE[it.cats.find(c=>!['gas','otherfuel'].includes(c)) || it.cats[0]] || '#5f6670';
     return `<li><div><div class="name"><span class="badge" style="background:${bc};color:#fff">${i+1}</span>${esc(name)}</div><div class="type">${it.cats.map(labelOf).join(' · ')}</div>
       <a class="go" href="${url}" target="_blank">นำทางด้วย Google Maps →</a></div><div class="dist">${km}</div></li>`;
   }).join('');
   const first=items[0];
+  { const fn=first.p.tags.name||first.p.tags.brand||labelOf(first.cats[0]);
+    document.getElementById('nname').textContent=fn;
+    document.getElementById('ndist').textContent= first.dist<1000 ? Math.round(first.dist/10)*10+' ม.' : (first.dist/1000).toFixed(1)+' กม.';
+    document.getElementById('next').classList.add('show'); }
   if(first.dist<1000 && !spoken.has(first.p.id)){
     spoken.add(first.p.id);
     const n=first.p.tags.name||first.p.tags.brand||labelOf(first.cats[0]);
-    speak(`อีก ${Math.round(first.dist/50)*50} เมตร มี ${n} ฝั่งซ้าย`);
+    speak(`อีก ${Math.round(first.dist/50)*50} เมตร มี ${n}${mode==='left'?' ฝั่งซ้าย':''}`);
   }
 }
 function labelOf(id){ return (CATS.find(c=>c.id===id)||{label:''}).label; }
@@ -275,6 +306,7 @@ btn.onclick=async ()=>{
   if(watchId!==null){
     navigator.geolocation.clearWatch(watchId); watchId=null;
     btn.textContent='▶ เริ่มใช้งาน'; btn.classList.remove('stop'); setStatus('หยุดแล้ว');
+    document.body.classList.remove('running'); setTimeout(()=>map.invalidateSize(),200);
     try{ wakeLock && wakeLock.release(); }catch(e){}
     return;
   }
@@ -284,6 +316,7 @@ btn.onclick=async ()=>{
   watchId=navigator.geolocation.watchPosition(onPos, e=>setStatus('เปิด GPS ไม่ได้: กรุณาอนุญาตตำแหน่ง'),
     { enableHighAccuracy:true, maximumAge:2000, timeout:15000 });
   btn.textContent='■ หยุด'; btn.classList.add('stop'); setStatus('กำลังหาตำแหน่ง...');
+  document.body.classList.add('running'); setTimeout(()=>map.invalidateSize(),200);
 };
 </script>
 </body>
