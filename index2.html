@@ -116,7 +116,7 @@ function wayDist(pt, way, o){
 }
 
 // ---------- ข้อมูลจาก OpenStreetMap ----------
-const SERVERS = ['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter'];
+const SERVERS = ['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
 let pois=[], roads=[], fetchCenter=null, fetching=false;
 async function loadData(pos){
   if(fetching) return; fetching=true;
@@ -129,11 +129,13 @@ async function loadData(pos){
   )->.p; .p out center tags;
   way(around:${r},${c})[highway~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"];
   out geom tags;`;
-  for(const s of SERVERS){
+  const ctrl = new AbortController(); const timer = setTimeout(()=>ctrl.abort(), 30000);
+  {
     try{
-      const res = await fetch(s, { method:'POST', body:'data='+encodeURIComponent(q) });
-      if(!res.ok) throw 0;
-      const j = await res.json();
+      const j = await Promise.any(SERVERS.map(s =>
+        fetch(s, { method:'POST', body:'data='+encodeURIComponent(q), signal:ctrl.signal })
+          .then(r=>{ if(!r.ok) throw 0; return r.json(); })));
+      clearTimeout(timer); ctrl.abort();
       pois=[]; roads=[];
       j.elements.forEach(e=>{
         if(e.type==='way' && e.geometry && e.tags && e.tags.highway) roads.push(e);
@@ -184,7 +186,7 @@ function currentRoad(){
 
 // ---------- แผนที่ ----------
 const map = L.map('map').setView([13.7563, 100.5018], 13);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom:19, subdomains:'abcd', attribution:'© OpenStreetMap © CARTO' }).addTo(map);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution:'© OpenStreetMap' }).addTo(map);
 const STYLE = { ptt:'#1a4fa0', pt:'#0a8f3c', caltex:'#d6262c', bangchak:'#2e9e47', shell:'#e0a800', esso:'#1d3e8c', susco:'#e06a1b', gas:'#7b3fc4', otherfuel:'#5f6670', toilet:'#1789a8', shop:'#e8731c' };
 const SHORT = { ptt:'ปตท.', pt:'PT', caltex:'คาลเท็กซ์', bangchak:'บางจาก', shell:'เชลล์', esso:'เอสโซ่', susco:'ซัสโก้', gas:'แก๊ส', otherfuel:'ปั๊ม', toilet:'ห้องน้ำ', shop:'ร้านค้า' };
 function pinIcon(cats, num, dim){
